@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPU Scheduling Visualizer</title>
+<style>
+  :root{
+    --bg:#0b0c10;
+    --panel:#15171e;
+    --panel-2:#1b1e27;
+    --border:#282c38;
+    --border-soft:#20232d;
+    --text:#eef0f5;
+    --text-dim:#9aa0b0;
+    --text-faint:#5f6577;
+    --accent-a:#7c5cff;
+    --accent-b:#5b8def;
+    --accent-grad:linear-gradient(135deg,var(--accent-a),var(--accent-b));
+    --good:#3ecf8e;
+    --bad:#ff6b6b;
+    --warn:#f5b94d;
+    --radius:10px;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(900px 500px at 12% -10%, rgba(124,92,255,0.10), transparent 60%),
+      radial-gradient(700px 500px at 100% 0%, rgba(91,141,239,0.08), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    padding:20px;
+  }
+  .wrap{max-width:1500px;margin:0 auto;}
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px 22px;
+    margin-bottom:18px;
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .logo{
+    width:44px;height:44px;border-radius:11px;
+    background:var(--accent-grad);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:11px;letter-spacing:0.5px;color:#fff;
+    box-shadow:0 6px 18px -6px rgba(124,92,255,0.6);
+  }
+  .brand h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.2px;}
+  .brand p{margin:2px 0 0;font-size:12px;color:var(--text-dim);}
+
+  .controls{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;}
+  select, input[type="number"], input[type="text"]{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:8px;
+    padding:9px 12px;
+    font-size:13.5px;
+    font-family:var(--sans);
+    outline:none;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  select{min-width:230px;cursor:pointer;}
+  input[type="number"]{width:90px;}
+  select:focus, input:focus{border-color:var(--accent-a);box-shadow:0 0 0 3px rgba(124,92,255,0.18);}
+  select:disabled, input:disabled{opacity:0.4;cursor:not-allowed;}
+
+  button{
+    font-family:var(--sans);
+    border:none;border-radius:8px;
+    padding:10px 18px;
+    font-size:13.5px;font-weight:600;
+    cursor:pointer;
+    transition:transform .08s ease, filter .15s ease, opacity .15s ease;
+  }
+  button:active{transform:translateY(1px);}
+  .btn-primary{background:var(--accent-grad);color:#fff;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--border);}
+  .btn-secondary:hover{border-color:#3a3f4e;}
+  .btn-danger{background:rgba(255,107,107,0.12);color:#ff9d9d;border:1px solid rgba(255,107,107,0.3);}
+  .btn-danger:hover{background:rgba(255,107,107,0.2);}
+  .btn-ghost{background:transparent;color:var(--text-dim);border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text);border-color:#3a3f4e;}
+  .btn-row{display:flex;gap:10px;}
+  button:disabled{opacity:0.35;cursor:not-allowed;}
+
+  /* ---------- Layout grid ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.15fr) minmax(0,1.35fr) minmax(0,0.85fr);
+    gap:18px;
+    margin-bottom:18px;
+  }
+  @media (max-width:1180px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px 20px;
+    display:flex;flex-direction:column;
+  }
+  .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:4px;}
+  .panel-head h2{font-size:15.5px;margin:0;font-weight:700;}
+  .panel-sub{font-size:12px;color:var(--text-dim);margin:2px 0 14px;}
+
+  .status-pill{
+    font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;white-space:nowrap;
+  }
+  .status-ok{background:rgba(62,207,142,0.12);color:var(--good);}
+  .status-bad{background:rgba(255,107,107,0.12);color:#ff9d9d;}
+
+  /* ---------- Process table ---------- */
+  table.ptable{width:100%;border-collapse:collapse;font-size:13px;}
+  table.ptable th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;
+    color:var(--text-faint);padding:0 8px 8px;font-weight:600;
+  }
+  table.ptable td{padding:5px 8px;}
+  table.ptable input[type="text"], table.ptable input[type="number"]{
+    width:100%;text-align:center;padding:8px 6px;font-family:var(--mono);font-size:13px;
+  }
+  table.ptable input.invalid{border-color:var(--bad);box-shadow:0 0 0 2px rgba(255,107,107,0.15);}
+  .chk-cell{text-align:center;width:34px;}
+  .chk-cell input{width:16px;height:16px;accent-color:var(--accent-a);cursor:pointer;}
+  .row-err{font-size:11px;color:#ff9d9d;padding:0 8px 6px;}
+
+  .table-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+  .table-actions button{width:100%;}
+
+  /* ---------- Stats ---------- */
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
+  .stat-card{
+    background:var(--panel-2);border:1px solid var(--border-soft);border-radius:9px;
+    padding:13px 14px;display:flex;align-items:center;gap:12px;
+  }
+  .stat-dot{
+    width:11px;height:11px;min-width:11px;border-radius:3px;background:var(--accent-grad);
+  }
+  .stat-label{font-size:11.5px;color:var(--text-dim);line-height:1.3;}
+  .stat-value{font-size:19px;font-weight:700;font-family:var(--mono);margin-top:1px;}
+
+  .subhead{font-size:13px;font-weight:700;margin:2px 0 10px;}
+  .metrics-wrap{
+    border:1px solid var(--border-soft);border-radius:9px;overflow:hidden;flex:1;
+    min-height:150px;display:flex;flex-direction:column;
+  }
+  table.mtable{width:100%;border-collapse:collapse;font-size:13px;}
+  table.mtable thead th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;
+    color:var(--text-faint);padding:10px 12px;background:var(--panel-2);
+    border-bottom:1px solid var(--border-soft);font-weight:600;
+  }
+  table.mtable tbody td{padding:9px 12px;border-bottom:1px solid var(--border-soft);font-family:var(--mono);}
+  table.mtable tbody tr:last-child td{border-bottom:none;}
+  table.mtable tbody tr:hover{background:rgba(255,255,255,0.02);}
+  .pid-chip{display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-weight:600;}
+  .pid-swatch{width:9px;height:9px;border-radius:2px;}
+  .empty-state{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    color:var(--text-faint);font-size:13px;padding:30px;text-align:center;
+  }
+
+  /* ---------- Algorithm guide ---------- */
+  .guide-title{font-size:15px;font-weight:700;margin:0 0 8px;}
+  .guide-text{font-size:12.8px;color:var(--text-dim);line-height:1.55;margin:0 0 12px;}
+  .guide-list{margin:0;padding-left:18px;font-size:12.8px;color:var(--text-dim);line-height:1.85;}
+  .guide-list li::marker{color:var(--accent-a);}
+  .guide-formula{
+    font-family:var(--mono);font-size:12px;background:var(--panel-2);
+    border:1px solid var(--border-soft);border-radius:7px;padding:9px 11px;color:#cfd3e6;
+    margin-top:10px;
+  }
+
+  /* ---------- Gantt ---------- */
+  .gantt-panel{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:18px 20px;
+  }
+  .gantt-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;}
+  .speed-group{display:flex;gap:8px;align-items:center;}
+  .speed-btn{
+    background:var(--panel-2);border:1px solid var(--border);color:var(--text-dim);
+    padding:8px 13px;border-radius:7px;font-size:12.5px;font-weight:600;
+  }
+  .speed-btn.active{background:var(--accent-grad);color:#fff;border-color:transparent;}
+
+  .gantt-body{
+    border:1px solid var(--border-soft);border-radius:9px;
+    min-height:180px;padding:26px;display:flex;align-items:center;justify-content:center;
+  }
+  .gantt-empty{color:var(--text-faint);font-size:13.5px;text-align:center;}
+
+  .gantt-track-wrap{width:100%;}
+  .gantt-track{
+    position:relative;display:flex;width:100%;height:56px;border-radius:8px;overflow:hidden;
+    border:1px solid var(--border-soft);
+  }
+  .gantt-seg{
+    position:relative;display:flex;align-items:center;justify-content:center;
+    color:#fff;font-family:var(--mono);font-weight:700;font-size:12.5px;
+    border-right:1px solid rgba(0,0,0,0.35);overflow:hidden;white-space:nowrap;
+    transition:filter .15s ease;
+  }
+  .gantt-seg:last-child{border-right:none;}
+  .gantt-seg.dim{filter:brightness(0.45) saturate(0.7);}
+  .gantt-seg.idle{
+    background:repeating-linear-gradient(45deg,#22242e,#22242e 6px,#1b1d26 6px,#1b1d26 12px);
+    color:var(--text-faint);
+  }
+  .gantt-ticks{position:relative;height:22px;margin-top:6px;}
+  .gantt-tick{
+    position:absolute;top:0;transform:translateX(-50%);
+    font-family:var(--mono);font-size:10.5px;color:var(--text-faint);
+  }
+  .gantt-playhead{
+    position:absolute;top:-1px;bottom:-1px;width:2px;background:#fff;
+    box-shadow:0 0 10px 1px rgba(255,255,255,0.7);pointer-events:none;
+    display:none;
+  }
+  .gantt-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;}
+  .legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-dim);}
+  .legend-swatch{width:11px;height:11px;border-radius:3px;}
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(5,6,9,0.72);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    max-width:720px;width:100%;max-height:85vh;overflow-y:auto;padding:26px 28px;
+    box-shadow:0 20px 60px -20px rgba(0,0,0,0.6);
+  }
+  .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+  .modal-head h3{margin:0;font-size:18px;}
+  .modal-close{
+    background:var(--panel-2);border:1px solid var(--border);color:var(--text-dim);
+    width:30px;height:30px;border-radius:8px;font-size:15px;line-height:1;cursor:pointer;
+  }
+  .modal-close:hover{color:var(--text);}
+  .modal h4{font-size:13.5px;margin:16px 0 6px;color:var(--text);}
+  .modal p, .modal li{font-size:13px;color:var(--text-dim);line-height:1.6;}
+  .modal ul{padding-left:18px;margin:6px 0;}
+
+  table.cmp{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+  table.cmp th{
+    text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-faint);
+    padding:9px 10px;border-bottom:1px solid var(--border-soft);
+  }
+  table.cmp td{padding:10px;border-bottom:1px solid var(--border-soft);font-family:var(--mono);font-size:12.5px;}
+  table.cmp tr.best td{color:var(--good);}
+  table.cmp tr:hover td{background:rgba(255,255,255,0.02);}
+
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:#2a2e3a;border-radius:9px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="logo">CPU</div>
+      <div>
+        <h1>CPU Scheduling Visualizer</h1>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="field">
+        <label for="algoSelect">Algorithm</label>
+        <select id="algoSelect">
+          <option value="rr">Round Robin</option>
+          <option value="priority-np">Priority (Non-Preemptive)</option>
+          <option value="priority-p">Priority (Preemptive)</option>
+          <option value="sjf-np">SJF (Non-Preemptive)</option>
+          <option value="sjf-p">SJF (Preemptive / SRTF)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="quantumInput">Time Quantum</label>
+        <input type="number" id="quantumInput" min="1" value="2">
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="calcBtn">Calculate</button>
+        <button class="btn-secondary" id="resetBtn">Reset</button>
+        <button class="btn-primary" id="compareBtn" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border);">Compare</button>
+      </div>
+      <button class="btn-ghost" id="helpBtn">Help</button>
+    </div>
+  </header>
+
+  <!-- Main grid -->
+  <div class="grid">
+
+    <!-- Process Input -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Process Input</h2>
+          <p class="panel-sub">Type values directly into the rows.</p>
+        </div>
+        <span class="status-pill status-ok" id="validityPill">All rows look good.</span>
+      </div>
+
+      <table class="ptable">
+        <thead>
+          <tr>
+            <th class="chk-cell">Pick</th>
+            <th>Process ID</th>
+            <th>Arrival</th>
+            <th>Burst</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody id="processBody"></tbody>
+      </table>
+
+      <div class="table-actions">
+        <button class="btn-primary" id="addRowBtn">Add Process</button>
+        <button class="btn-secondary" id="deleteRowBtn">Delete Selected</button>
+        <button class="btn-secondary" id="randomBtn">Generate Random</button>
+        <button class="btn-danger" id="clearBtn">Clear Table</button>
+      </div>
+    </section>
+
+    <!-- Statistics Dashboard -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Statistics Dashboard</h2>
+          <p class="panel-sub" id="statsSub">Run a calculation to view metrics.</p>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-dot"></div><div><div class="stat-label">Completion Time</div><div class="stat-value" id="statCompletion">--</div></div></div>
+        <div class="stat-card"><div class="stat-dot"></div><div><div class="stat-label">Avg Waiting</div><div class="stat-value" id="statWaiting">--</div></div></div>
+        <div class="stat-card"><div class="stat-dot"></div><div><div class="stat-label">Avg Turnaround</div><div class="stat-value" id="statTurnaround">--</div></div></div>
+        <div class="stat-card"><div class="stat-dot"></div><div><div class="stat-label">Idle Time</div><div class="stat-value" id="statIdle">--</div></div></div>
+      </div>
+
+      <div class="subhead">Per-Process Metrics</div>
+      <div class="metrics-wrap">
+        <table class="mtable">
+          <thead>
+            <tr><th>PID</th><th>Complete</th><th>Start Time</th><th>End Time</th><th>Waiting</th><th>Turnaround</th></tr>
+          </thead>
+          <tbody id="metricsBody"></tbody>
+        </table>
+        <div class="empty-state" id="metricsEmpty">No result yet.</div>
+      </div>
+    </section>
+
+    <!-- Algorithm Guide -->
+    <section class="panel" id="guidePanel">
+      <div class="panel-head"><h2>Algorithm Guide</h2></div>
+      <div id="guideContent"></div>
+    </section>
+
+  </div>
+
+  <!-- Gantt Chart -->
+  <section class="gantt-panel">
+    <div class="gantt-head">
+      <div>
+        <h2 style="margin:0;font-size:15.5px;">Gantt Chart</h2>
+        <p class="panel-sub" style="margin:2px 0 0;" id="ganttSub">Run a calculation to draw the timeline.</p>
+      </div>
+      <div class="btn-row" style="align-items:center;">
+        <button class="btn-primary" id="playBtn" disabled>Play</button>
+        <button class="btn-secondary" id="restartBtn" disabled>Restart</button>
+        <div class="speed-group">
+          <button class="speed-btn" data-speed="0.5">0.5x</button>
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+          <button class="speed-btn" data-speed="4">4x</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="gantt-body" id="ganttBody">
+      <div class="gantt-empty">Run a calculation to draw the Gantt chart.</div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Help Modal -->
+<div class="modal-overlay" id="helpOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>How to use this tool</h3>
+      <button class="modal-close" id="closeHelp">&times;</button>
+    </div>
+    <h4>1. Enter your processes</h4>
+    <p>Type Arrival, Burst, and Priority values directly into the table. Use <strong>Add Process</strong> for a blank row, <strong>Generate Random</strong> for sample data, or check rows and press <strong>Delete Selected</strong> to remove them.</p>
+    <h4>2. Pick an algorithm</h4>
+    <p>Choose Round Robin, Priority, or SJF from the dropdown. Round Robin also needs a <strong>Time Quantum</strong> &mdash; the fixed slice of CPU time each process gets per turn.</p>
+    <h4>3. Calculate</h4>
+    <p>Press <strong>Calculate</strong> to run the simulation. The Statistics Dashboard, Per-Process Metrics table, and Gantt Chart all update together.</p>
+    <h4>4. Watch it play out</h4>
+    <p>Press <strong>Play</strong> on the Gantt Chart to animate a playhead across the timeline. Use the speed buttons to slow down or speed up the animation, and <strong>Restart</strong> to replay it.</p>
+    <h4>5. Compare algorithms</h4>
+    <p>Press <strong>Compare</strong> to run all five algorithms against your current process list and see which one produces the lowest average waiting and turnaround time.</p>
+    <h4>Reading priority</h4>
+    <p>Priority is a plain number: <strong>1 is the highest priority</strong>, and larger numbers run later.</p>
+  </div>
+</div>
+
+<!-- Compare Modal -->
+<div class="modal-overlay" id="compareOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Algorithm Comparison</h3>
+      <button class="modal-close" id="closeCompare">&times;</button>
+    </div>
+    <p>Same process list, run through every algorithm. Round Robin uses the time quantum currently set above. Lowest values in each column are highlighted.</p>
+    <div style="overflow-x:auto;">
+      <table class="cmp" id="compareTable">
+        <thead>
+          <tr><th>Algorithm</th><th>Avg Waiting</th><th>Avg Turnaround</th><th>Completion Time</th><th>Idle Time</th></tr>
+        </thead>
+        <tbody id="compareBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- engine ---------- */
+const cloneMorty = ps => ps.map(p=>({pid:p.pid,arrival:p.arrival,burst:p.burst,priority:p.priority,remaining:p.burst,response:null,completion:null}));
+
+function wubbaDub(list, segs, idle, algo){
+  const per={}; let w=0,t=0,r=0;
+  list.forEach(p=>{
+    const turn=p.completion-p.arrival, wait=turn-p.burst;
+    per[p.pid]={pid:p.pid,arrival:p.arrival,burst:p.burst,priority:p.priority,completion:p.completion,turnaround:turn,waiting:wait,response:p.response};
+    w+=wait; t+=turn; r+=p.response;
+  });
+  const n=list.length;
+  return {algo, segments:segs, perProcess:per, idle, completionTime:Math.max(...list.map(p=>p.completion)), avgWaiting:w/n, avgTurnaround:t/n, avgResponse:r/n};
+}
+
+function glueTimeline(segs, pid, start, end){
+  const last=segs[segs.length-1];
+  if(last && last.pid===pid && last.end===start) last.end=end;
+  else segs.push({pid,start,end});
+}
+
+function ricksRoundRobin(procs, quantum){
+  const list=cloneMorty(procs);
+  const order=[...list].sort((a,b)=>a.arrival-b.arrival||a.pid.localeCompare(b.pid));
+  let idx=0,time=0,idle=0,done=0; const n=list.length, queue=[], segs=[];
+  const arrive=t=>{ while(idx<order.length && order[idx].arrival<=t) queue.push(order[idx++]); };
+  arrive(0);
+  while(done<n){
+    if(!queue.length){ const na=order[idx].arrival; idle+=na-time; time=na; arrive(time); continue; }
+    const p=queue.shift();
+    if(p.response===null) p.response=time-p.arrival;
+    const run=Math.min(quantum,p.remaining), start=time;
+    time+=run; p.remaining-=run;
+    glueTimeline(segs,p.pid,start,time);
+    arrive(time);
+    if(p.remaining>0) queue.push(p); else { p.completion=time; done++; }
+  }
+  return wubbaDub(list, segs, idle, 'Round Robin');
+}
+
+function jerryRuns(procs, pick, algo){
+  const list=cloneMorty(procs);
+  let time=0,idle=0,done=0; const n=list.length, segs=[];
+  while(done<n){
+    const ready=list.filter(p=>p.completion===null && p.arrival<=time);
+    if(!ready.length){ const na=Math.min(...list.filter(p=>p.completion===null).map(p=>p.arrival)); idle+=na-time; time=na; continue; }
+    ready.sort((a,b)=>pick(a,b)||a.arrival-b.arrival||a.pid.localeCompare(b.pid));
+    const p=ready[0];
+    p.response=time-p.arrival;
+    const start=time; time+=p.remaining; p.remaining=0; p.completion=time; done++;
+    glueTimeline(segs,p.pid,start,time);
+  }
+  return wubbaDub(list, segs, idle, algo);
+}
+
+function summerSlices(procs, keyOf, algo){
+  const list=cloneMorty(procs);
+  let time=0,idle=0,done=0; const n=list.length, segs=[];
+  let guard=0; const guardMax=300000;
+  while(done<n){
+    if(++guard>guardMax) throw new Error('Simulation exceeded safety limit');
+    const ready=list.filter(p=>p.remaining>0 && p.arrival<=time);
+    if(!ready.length){ const na=Math.min(...list.filter(p=>p.remaining>0).map(p=>p.arrival)); idle+=na-time; time=na; continue; }
+    ready.sort((a,b)=>keyOf(a)-keyOf(b)||a.arrival-b.arrival||a.pid.localeCompare(b.pid));
+    const p=ready[0];
+    if(p.response===null) p.response=time-p.arrival;
+    const start=time; time+=1; p.remaining-=1;
+    glueTimeline(segs,p.pid,start,time);
+    if(p.remaining===0){ p.completion=time; done++; }
+  }
+  return wubbaDub(list, segs, idle, algo);
+}
+
+function portalGun(key, procs, quantum){
+  switch(key){
+    case 'rr': return ricksRoundRobin(procs, quantum);
+    case 'priority-np': return jerryRuns(procs,(a,b)=>a.priority-b.priority,'Priority (Non-Preemptive)');
+    case 'priority-p': return summerSlices(procs,p=>p.priority,'Priority (Preemptive)');
+    case 'sjf-np': return jerryRuns(procs,(a,b)=>a.burst-b.burst,'SJF (Non-Preemptive)');
+    case 'sjf-p': return summerSlices(procs,p=>p.remaining,'SJF (Preemptive / SRTF)');
+    default: throw new Error('Unknown algorithm: '+key);
+  }
+}
+
+/* ---------- state ---------- */
+const dimensionHues=['#7c5cff','#5b8def','#3ecf8e','#f5b94d','#ff6b6b','#39c0d0','#c869e0','#a3d139','#e08a4f','#6ea8ff'];
+const mortyColor=(pid,order)=>dimensionHues[order.indexOf(pid)%dimensionHues.length];
+
+let mortys=[], mortyCount=1, currentTimeline=null, citadelOrder=[];
+const birthMorty=(pid,arrival,burst,priority)=>({id:'r'+(mortyCount++),pid,arrival,burst,priority});
+const ogMortys=()=>[birthMorty('P1',0,5,1),birthMorty('P2',1,3,2),birthMorty('P3',2,8,1)];
+mortys=ogMortys();
+
+const garage=document.getElementById('processBody');
+const bethBadge=document.getElementById('validityPill');
+const portalDial=document.getElementById('algoSelect');
+const fuelTank=document.getElementById('quantumInput');
+const fuelField=fuelTank.closest('.field');
+
+function nextMortyTag(){
+  let n=1; const used=new Set(mortys.map(r=>r.pid));
+  while(used.has('P'+n)) n++;
+  return 'P'+n;
+}
+
+function screamCheck(){
+  const errs={}, counts={};
+  mortys.forEach(r=>counts[r.pid]=(counts[r.pid]||0)+1);
+  mortys.forEach(row=>{
+    const e=[];
+    if(!row.pid || !row.pid.trim()) e.push({field:'pid',msg:'Process ID is required.'});
+    else if(counts[row.pid]>1) e.push({field:'pid',msg:'Process ID must be unique.'});
+    if(row.arrival===''||row.arrival===undefined||isNaN(row.arrival)||row.arrival<0) e.push({field:'arrival',msg:'Arrival must be 0 or greater.'});
+    if(row.burst===''||row.burst===undefined||isNaN(row.burst)||row.burst<1) e.push({field:'burst',msg:'Burst must be at least 1.'});
+    if(row.priority===''||row.priority===undefined||isNaN(row.priority)||row.priority<1) e.push({field:'priority',msg:'Priority must be at least 1 (1 = highest).'});
+    if(e.length) errs[row.id]=e;
+  });
+  return errs;
+}
+
+function updateBadge(errs){
+  if(!mortys.length){ bethBadge.textContent='Add at least one process.'; bethBadge.className='status-pill status-bad'; }
+  else if(Object.keys(errs).length){ bethBadge.textContent='Fix the highlighted rows.'; bethBadge.className='status-pill status-bad'; }
+  else { bethBadge.textContent='All rows look good.'; bethBadge.className='status-pill status-ok'; }
+}
+
+function paintGarage(){
+  garage.innerHTML='';
+  const errs=screamCheck();
+  mortys.forEach(row=>{
+    const list=errs[row.id]||[];
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td class="chk-cell"><input type="checkbox" data-pick="${row.id}"></td>
+      <td><input type="text" data-field="pid" data-id="${row.id}" value="${row.pid}"></td>
+      <td><input type="number" min="0" data-field="arrival" data-id="${row.id}" value="${row.arrival}"></td>
+      <td><input type="number" min="1" data-field="burst" data-id="${row.id}" value="${row.burst}"></td>
+      <td><input type="number" min="1" data-field="priority" data-id="${row.id}" value="${row.priority}"></td>`;
+    garage.appendChild(tr);
+    if(list.length){
+      tr.querySelectorAll('input[data-field]').forEach(inp=>{ if(list.some(e=>e.field===inp.dataset.field)) inp.classList.add('invalid'); });
+      const et=document.createElement('tr'), td=document.createElement('td');
+      td.colSpan=5; td.className='row-err'; td.textContent=list.map(e=>e.msg).join('  ');
+      et.appendChild(td); garage.appendChild(et);
+    }
+  });
+  garage.querySelectorAll('input[data-field]').forEach(inp=>inp.addEventListener('input', mortyChanged));
+  updateBadge(errs);
+}
+
+function mortyChanged(e){
+  const {id,field}=e.target.dataset;
+  const row=mortys.find(r=>r.id===id);
+  if(!row) return;
+  row[field]= field==='pid' ? (e.target.value.trim()||row.pid) : (e.target.value===''?'':Number(e.target.value));
+  const errs=screamCheck();
+  updateBadge(errs);
+  garage.querySelectorAll('input[data-field]').forEach(i=>i.classList.remove('invalid'));
+  Object.entries(errs).forEach(([rid,list])=>list.forEach(err=>{
+    const t=garage.querySelector(`input[data-field="${err.field}"][data-id="${rid}"]`);
+    if(t) t.classList.add('invalid');
+  }));
+}
+
+document.getElementById('addRowBtn').addEventListener('click',()=>{ mortys.push(birthMorty(nextMortyTag(),0,1,1)); paintGarage(); });
+
+document.getElementById('deleteRowBtn').addEventListener('click',()=>{
+  const picked=new Set([...garage.querySelectorAll('input[data-pick]')].filter(c=>c.checked).map(c=>c.dataset.pick));
+  if(!picked.size) return;
+  mortys=mortys.filter(r=>!picked.has(r.id));
+  paintGarage();
+});
+
+document.getElementById('randomBtn').addEventListener('click',()=>{
+  const count=3+Math.floor(Math.random()*3);
+  let arrival=0; const fresh=[];
+  for(let i=0;i<count;i++){
+    arrival+=Math.random()<0.5?0:Math.floor(Math.random()*3)+1;
+    fresh.push(birthMorty('P'+(i+1), arrival, Math.floor(Math.random()*8)+1, Math.floor(Math.random()*4)+1));
+  }
+  mortys=fresh; mortyCount=count+1; paintGarage();
+});
+
+document.getElementById('clearBtn').addEventListener('click',()=>{ mortys=[]; paintGarage(); flushMultiverse(); });
+
+function fuelSwitch(){
+  const isRR=portalDial.value==='rr';
+  fuelTank.disabled=!isRR;
+  fuelField.style.opacity=isRR?'1':'0.45';
+}
+portalDial.addEventListener('change',()=>{ fuelSwitch(); tellLore(); });
+fuelSwitch();
+
+/* ---------- lore ---------- */
+const LORE={
+  'rr':{title:'Round Robin', text:'Each ready process receives a fixed time slice (the quantum) before going back to the end of the queue.',
+    points:['Uses a Time Quantum you set above.','Keeps scheduling fair for interactive systems.','Prevents one long process from holding the CPU forever.','A smaller quantum creates more context switches.'],
+    formula:'waiting = turnaround − burst · turnaround = completion − arrival'},
+  'priority-np':{title:'Priority (Non-Preemptive)', text:'The ready process with the best (lowest-numbered) priority runs to completion once started.',
+    points:['1 is treated as the highest priority.','Once a process starts, it can\'t be interrupted.','A low-priority process can wait a long time (starvation) behind higher-priority arrivals.','Simple to reason about, but not fair under heavy load.'],
+    formula:'response = completion − burst − arrival (equals waiting, since it never yields once started)'},
+  'priority-p':{title:'Priority (Preemptive)', text:'The CPU always runs the ready process with the best current priority, interrupting a running process the instant a higher-priority one arrives.',
+    points:['1 is treated as the highest priority.','Reacts immediately to newly-arrived, more important work.','More context switches than the non-preemptive version.','Still vulnerable to starvation for low-priority processes.'],
+    formula:'re-evaluated every time unit: pick min(priority) among arrived, unfinished processes'},
+  'sjf-np':{title:'SJF (Non-Preemptive)', text:'Shortest Job First: among the processes that have arrived, the one with the smallest total burst time runs next, uninterrupted.',
+    points:['Minimizes average waiting time among non-preemptive algorithms.','Needs to know burst time in advance (often estimated in real systems).','A long process can still be starved by a steady stream of short arrivals.'],
+    formula:'select min(burst) among arrived, unstarted processes'},
+  'sjf-p':{title:'SJF (Preemptive / SRTF)', text:'Shortest Remaining Time First: the CPU always runs whichever ready process has the least remaining work, preempting on every new arrival if needed.',
+    points:['Optimal for minimizing average waiting time in theory.','Recalculates the "shortest" choice every time unit.','Can cause heavy context switching with many similar-length bursts.','Long processes can be starved by a continuous stream of short arrivals.'],
+    formula:'re-evaluated every time unit: pick min(remaining) among arrived, unfinished processes'},
+};
+
+function tellLore(){
+  const g=LORE[portalDial.value];
+  document.getElementById('guideContent').innerHTML=`
+    <div class="guide-title">${g.title}</div>
+    <p class="guide-text">${g.text}</p>
+    <ul class="guide-list">${g.points.map(p=>`<li>${p}</li>`).join('')}</ul>
+    <div class="guide-formula">${g.formula}</div>`;
+}
+tellLore();
+
+/* ---------- results ---------- */
+function flushMultiverse(){
+  currentTimeline=null;
+  ['statCompletion','statWaiting','statTurnaround','statIdle'].forEach(id=>document.getElementById(id).textContent='--');
+  document.getElementById('statsSub').textContent='Run a calculation to view metrics.';
+  document.getElementById('metricsBody').innerHTML='';
+  document.getElementById('metricsEmpty').style.display='flex';
+  document.getElementById('ganttSub').textContent='Run a calculation to draw the timeline.';
+  document.getElementById('ganttBody').innerHTML='<div class="gantt-empty">Run a calculation to draw the Gantt chart.</div>';
+  document.getElementById('playBtn').disabled=true;
+  document.getElementById('restartBtn').disabled=true;
+  freezeTime();
+}
+
+function renderRickStats(res){
+  document.getElementById('statCompletion').textContent=res.completionTime;
+  document.getElementById('statWaiting').textContent=res.avgWaiting.toFixed(2);
+  document.getElementById('statTurnaround').textContent=res.avgTurnaround.toFixed(2);
+  document.getElementById('statIdle').textContent=res.idle;
+  document.getElementById('statsSub').textContent=res.algo+' results';
+}
+
+function renderMortyTable(res, order){
+  const body=document.getElementById('metricsBody'), empty=document.getElementById('metricsEmpty');
+  const rows=Object.values(res.perProcess).sort((a,b)=>a.pid.localeCompare(b.pid,undefined,{numeric:true}));
+  if(!rows.length){ empty.style.display='flex'; body.innerHTML=''; return; }
+  empty.style.display='none';
+  body.innerHTML=rows.map(p=>`
+    <tr><td><span class="pid-chip"><span class="pid-swatch" style="background:${mortyColor(p.pid,order)}"></span>${p.pid}</span></td>
+    <td>${p.completion}</td><td>${p.arrival+p.response}</td><td>${p.completion}</td><td>${p.waiting}</td><td>${p.turnaround}</td></tr>`).join('');
+}
+
+/* ---------- portal (gantt) ---------- */
+let portalState={playing:false,raf:null,startTs:0,speed:1,duration:0};
+
+function buildPortal(res, order){
+  const body=document.getElementById('ganttBody'), total=res.completionTime;
+  if(total<=0){ body.innerHTML='<div class="gantt-empty">Nothing to draw.</div>'; return; }
+
+  const segs=[]; let cur=0;
+  res.segments.forEach(s=>{ if(s.start>cur) segs.push({pid:null,start:cur,end:s.start}); segs.push(s); cur=s.end; });
+  if(cur<total) segs.push({pid:null,start:cur,end:total});
+
+  const track=segs.map(s=>{
+    const w=((s.end-s.start)/total*100).toFixed(4);
+    if(s.pid===null) return `<div class="gantt-seg idle" style="width:${w}%" data-start="${s.start}" data-end="${s.end}">idle</div>`;
+    const c=mortyColor(s.pid,order), label=((s.end-s.start)/total)>0.035?s.pid:'';
+    return `<div class="gantt-seg" data-pid="${s.pid}" data-start="${s.start}" data-end="${s.end}" style="width:${w}%;background:${c}">${label}</div>`;
+  }).join('');
+
+  const bounds=[...new Set([0,total,...segs.flatMap(s=>[s.start,s.end])])].sort((a,b)=>a-b);
+  const ticks=bounds.map(t=>`<div class="gantt-tick" style="left:${(t/total*100).toFixed(4)}%">${t}</div>`).join('');
+  const legend=order.map(pid=>`<div class="legend-item"><span class="legend-swatch" style="background:${mortyColor(pid,order)}"></span>${pid}</div>`).join('')
+    + `<div class="legend-item"><span class="legend-swatch" style="background:#22242e;"></span>idle</div>`;
+
+  body.innerHTML=`<div class="gantt-track-wrap">
+      <div class="gantt-track" id="ganttTrack">${track}<div class="gantt-playhead" id="playhead"></div></div>
+      <div class="gantt-ticks">${ticks}</div>
+      <div class="gantt-legend">${legend}</div></div>`;
+
+  document.getElementById('ganttSub').textContent=`${res.algo} — makespan ${total} unit${total===1?'':'s'}, ${res.idle} idle`;
+  document.getElementById('playBtn').disabled=false;
+  document.getElementById('restartBtn').disabled=false;
+  document.getElementById('playBtn').textContent='Play';
+  portalState.duration=total;
+}
+
+function freezeTime(){
+  portalState.playing=false;
+  if(portalState.raf) cancelAnimationFrame(portalState.raf);
+  const ph=document.getElementById('playhead'); if(ph) ph.style.display='none';
+  document.querySelectorAll('.gantt-seg').forEach(el=>el.classList.remove('dim'));
+  const btn=document.getElementById('playBtn'); if(btn) btn.textContent='Play';
+}
+
+function rewindTime(){ freezeTime(); const ph=document.getElementById('playhead'); if(ph) ph.style.left='0%'; }
+
+function jumpDimension(){
+  if(!currentTimeline) return;
+  const total=portalState.duration; if(total<=0) return;
+  const ph=document.getElementById('playhead'); if(!ph) return;
+  ph.style.display='block';
+  const totalMs=(total*260)/portalState.speed;
+  portalState.playing=true; portalState.startTs=performance.now();
+  document.getElementById('playBtn').textContent='Pause';
+
+  function frame(ts){
+    if(!portalState.playing) return;
+    const progress=Math.min((ts-portalState.startTs)/totalMs,1), now=progress*total;
+    ph.style.left=(progress*100)+'%';
+    document.querySelectorAll('.gantt-seg').forEach(el=>{
+      const s=Number(el.dataset.start), e=Number(el.dataset.end);
+      el.classList.toggle('dim', !(now>=s && now<e) && !(progress>=1 && e===total));
+    });
+    if(progress>=1){ portalState.playing=false; document.getElementById('playBtn').textContent='Play'; document.querySelectorAll('.gantt-seg').forEach(el=>el.classList.remove('dim')); return; }
+    portalState.raf=requestAnimationFrame(frame);
+  }
+  portalState.raf=requestAnimationFrame(frame);
+}
+
+document.getElementById('playBtn').addEventListener('click',()=> portalState.playing ? freezeTime() : jumpDimension());
+document.getElementById('restartBtn').addEventListener('click', rewindTime);
+document.querySelectorAll('.speed-btn').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  portalState.speed=Number(btn.dataset.speed);
+  if(portalState.playing){ freezeTime(); jumpDimension(); }
+}));
+
+/* ---------- calculate / reset ---------- */
+function roundUpMortys(){
+  const errs=screamCheck();
+  if(Object.keys(errs).length || !mortys.length) return null;
+  return mortys.map(r=>({pid:r.pid, arrival:Number(r.arrival), burst:Number(r.burst), priority:Number(r.priority)}));
+}
+
+document.getElementById('calcBtn').addEventListener('click',()=>{
+  const procs=roundUpMortys();
+  if(!procs){ paintGarage(); return; }
+  const quantum=Math.max(1, Number(fuelTank.value)||1);
+  let res;
+  try{ res=portalGun(portalDial.value, procs, quantum); }
+  catch(err){ alert('Could not calculate schedule: '+err.message); return; }
+  currentTimeline=res; citadelOrder=procs.map(p=>p.pid);
+  renderRickStats(res); renderMortyTable(res, citadelOrder); buildPortal(res, citadelOrder);
+  rewindTime();
+});
+
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  mortys=ogMortys(); mortyCount=mortys.length+1;
+  portalDial.value='rr'; fuelTank.value=2;
+  fuelSwitch(); tellLore(); paintGarage(); flushMultiverse();
+});
+
+/* ---------- council (compare) ---------- */
+const councilRoom=document.getElementById('compareOverlay');
+const meeseeksBox=document.getElementById('helpOverlay');
+
+document.getElementById('compareBtn').addEventListener('click',()=>{
+  const procs=roundUpMortys();
+  if(!procs){ paintGarage(); alert('Fix the highlighted rows before comparing algorithms.'); return; }
+  const quantum=Math.max(1, Number(fuelTank.value)||1);
+  const results=['rr','priority-np','priority-p','sjf-np','sjf-p'].map(a=>portalGun(a, procs, quantum));
+  const minW=Math.min(...results.map(r=>r.avgWaiting)), minT=Math.min(...results.map(r=>r.avgTurnaround));
+  document.getElementById('compareBody').innerHTML=results.map(r=>`
+    <tr class="${r.avgWaiting===minW && r.avgTurnaround===minT?'best':''}">
+      <td style="font-family:var(--sans);font-weight:600;color:var(--text);">${r.algo}</td>
+      <td>${r.avgWaiting.toFixed(2)}</td><td>${r.avgTurnaround.toFixed(2)}</td>
+      <td>${r.completionTime}</td><td>${r.idle}</td></tr>`).join('');
+  councilRoom.classList.add('open');
+});
+document.getElementById('closeCompare').addEventListener('click',()=>councilRoom.classList.remove('open'));
+councilRoom.addEventListener('click',e=>{ if(e.target===councilRoom) councilRoom.classList.remove('open'); });
+
+document.getElementById('helpBtn').addEventListener('click',()=>meeseeksBox.classList.add('open'));
+document.getElementById('closeHelp').addEventListener('click',()=>meeseeksBox.classList.remove('open'));
+meeseeksBox.addEventListener('click',e=>{ if(e.target===meeseeksBox) meeseeksBox.classList.remove('open'); });
+
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ councilRoom.classList.remove('open'); meeseeksBox.classList.remove('open'); } });
+
+/* ---------- init ---------- */
+paintGarage();
+flushMultiverse();
+
+})();
+
+</script>
+</body>
+</html>
